@@ -1,0 +1,88 @@
+#!/usr/bin/env ruby
+
+# frozen_string_literal: true
+
+require 'etc'
+
+class ZshHistoryParser
+  DEFAULT_MIN_LENGTH = 4
+  DEFAULT_AMOUNT_TO_RETURN = 20
+
+  def draw
+    show_help if helping?
+    
+    show_results unless helping?
+  end
+
+  private
+
+  def show_help
+    puts "usage: #{current_file} [min_length] [amount_to_return]"
+  end
+
+  def show_results
+    puts "Top #{amount_to_return} most used commands (min length: #{min_length})"
+    most_used.each do |n, k|
+      puts "[#{k}] #{n}"
+    end
+  end
+ 
+  def helping?
+    return false unless args?
+
+    %w[--help -h].include? ARGV[0]
+  end
+
+  def args?
+    ARGV.none?(&:empty?)
+  end
+
+  def passed_length
+    ARGV[0].to_i
+  end
+
+  def passed_amount
+    ARGV[1].to_i
+  end
+
+  def amount_to_return
+    return passed_amount unless passed_amount.zero?
+
+    DEFAULT_AMOUNT_TO_RETURN
+  end
+
+  def min_length
+    return passed_length unless passed_length.zero?
+
+    DEFAULT_MIN_LENGTH
+  end
+
+  def detected_commands
+    {}.tap do |commands|
+      File.readlines(zsh_history_path).each do |l|
+        l = l.encode('utf-8', 'binary', undef: :replace)
+        next if l == ''
+        next unless l.match(/: \d+:/)
+        l = l.sub(';','[SPLIT]').split('[SPLIT]')
+        key = l.last.split.first
+        commands[key] = 0 unless commands.key? key
+        commands[key] += 1
+      end
+    end
+  end
+
+  # TODO: refactor this
+  def most_used
+    detected_commands.reject { |k, v| v < 10 || k.size < min_length || k.start_with?('exe/') || k.start_with?('scripts/') || k.start_with?('script/') || k.start_with?('bin') || k.start_with?('./') }.map { |k, v| [v, k]}.sort_by { |a| a.first }.reverse[0..amount_to_return]
+  end
+
+  def current_file
+    File.basename(__FILE__)
+  end
+
+  def zsh_history_path
+    File.join(Etc.getpwuid.dir, '.zsh_history')
+  end
+end
+
+ZshHistoryParser.new.draw
